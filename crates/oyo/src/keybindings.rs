@@ -770,6 +770,14 @@ impl Keybindings {
         self.global.keys_label(action)
     }
 
+    /// Whether `key` (a config key string such as "r") is bound to `action` in normal mode.
+    pub(crate) fn normal_action_has_key(&self, action: NormalAction, key: &str) -> bool {
+        self.normal
+            .effective
+            .get(action.id())
+            .is_some_and(|keys| keys.iter().any(|bound| bound == key))
+    }
+
     pub(crate) fn normal_keys(&self, action: NormalAction) -> String {
         self.normal.keys_label(action)
     }
@@ -1207,6 +1215,18 @@ mod tests {
             bindings.normal(ctrl('v')),
             Dispatch::Matched(NormalAction::StartBlockSelection)
         );
+    }
+
+    #[test]
+    fn review_file_and_next_is_unbound_by_default_and_reports_a_config_key() {
+        let defaults = Keybindings::default();
+        assert!(!defaults.normal_action_has_key(NormalAction::ReviewFileAndNext, "r"));
+        let mut config = KeybindingsConfig::default();
+        let normal = config.modes.entry("normal".to_string()).or_default();
+        normal.insert("review_file_and_next".to_string(), vec!["r".to_string()]);
+        normal.insert("replay_step".to_string(), vec!["g p".to_string()]);
+        let bound = Keybindings::from_config(&config);
+        assert!(bound.normal_action_has_key(NormalAction::ReviewFileAndNext, "r"));
     }
 
     #[test]

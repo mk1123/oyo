@@ -823,9 +823,14 @@ fn handle_normal_key(
             app.reset_count();
             return Ok(());
         }
+        // `r` opens the reply prefix on comment cards, unless the user bound `r` to
+        // review-and-next, which then works the same with or without comments shown.
         if !sequence_pending
             && matches!(key.code, KeyCode::Char('r'))
             && app.inline_review_reply_available()
+            && !app
+                .keybindings
+                .normal_action_has_key(NormalAction::ReviewFileAndNext, "r")
         {
             app.review_reply_prefix = true;
             app.review_edit_prefix = false;

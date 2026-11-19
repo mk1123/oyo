@@ -47,6 +47,7 @@ use app::{
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use crossterm::{
+    cursor::SetCursorStyle,
     event::{
         self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
         Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
@@ -1635,6 +1636,7 @@ fn restore_terminal(terminal: &mut TuiTerminal) -> Result<()> {
     drain_queued_input_events();
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    let _ = execute!(terminal.backend_mut(), SetCursorStyle::DefaultUserShape);
     terminal.show_cursor()?;
     Ok(())
 }
@@ -8325,6 +8327,7 @@ fn run_app(terminal: &mut TuiTerminal, app: &mut App, context: RunContext<'_>) -
     carry_control_session_name(control_session_name, control_session.as_ref());
 
     let mut remote_paste = RemotePaste::default();
+    let mut bar_cursor = false;
     loop {
         *menu_bar = app.menu_bar;
         remote_paste.set(app.remote_open.is_some())?;
@@ -8343,6 +8346,18 @@ fn run_app(terminal: &mut TuiTerminal, app: &mut App, context: RunContext<'_>) -
             let draw_result = terminal.draw(|f| ui::draw(f, app)).map(|_| ());
             let _ = execute!(terminal.backend_mut(), EndSynchronizedUpdate);
             draw_result.map_err(|e| anyhow!("{e}"))?;
+            // A text box shows a bar cursor while a comment is edited; elsewhere the
+            // terminal's own cursor shape applies.
+            let editing = app.review_editor_active();
+            if editing != bar_cursor {
+                let style = if editing {
+                    SetCursorStyle::SteadyBar
+                } else {
+                    SetCursorStyle::DefaultUserShape
+                };
+                let _ = execute!(terminal.backend_mut(), style);
+                bar_cursor = editing;
+            }
             app.multi_diff.mark_content_presented();
             needs_draw = false;
             last_scroll_draw = Instant::now();
