@@ -365,6 +365,7 @@ The selection toolbar appears above the selection after you finish a mouse selec
 | --- | --- | --- |
 | `cancel` | `esc` | Cancel selection |
 | `copy` | `y` | Copy selection |
+| `comment` | `m` | Comment on the selected lines |
 | `show_actions` | `enter` | Show selection actions |
 | `left` | `h`, `left` | Extend left |
 | `right` | `l`, `right` | Extend right |

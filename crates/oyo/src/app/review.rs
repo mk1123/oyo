@@ -5446,6 +5446,63 @@ impl App {
         true
     }
 
+    /// Open a comment over the diff lines drawn on screen rows `first..=last`. It is
+    /// stored as a hunk-kind comment without a hunk id, which oyo places and exports by
+    /// its old and new line ranges. Returns false when fewer than two lines are covered.
+    pub(crate) fn start_range_comment_at_screen_rows(
+        &mut self,
+        first: u16,
+        last: u16,
+        preferred_side: Option<ReviewSide>,
+    ) -> bool {
+        if !self.review_mode {
+            return false;
+        }
+        let anchors: Vec<ReviewAnchor> = (first..=last)
+            .filter_map(|row| self.review_anchor_at_screen_row_on_side(row, preferred_side))
+            .collect();
+        let Some(top) = anchors.first().cloned() else {
+            return false;
+        };
+        let span = |pick: fn(&ReviewAnchor) -> Option<ReviewRange>| {
+            let numbers: Vec<usize> = anchors
+                .iter()
+                .filter_map(pick)
+                .flat_map(|range| [range.start, range.end])
+                .collect();
+            Some(ReviewRange {
+                start: *numbers.iter().min()?,
+                end: *numbers.iter().max()?,
+            })
+        };
+        let old_range = span(|anchor| anchor.old_range);
+        let new_range = span(|anchor| anchor.new_range);
+        let covers_one_line = |range: Option<ReviewRange>| range.is_none_or(|r| r.start == r.end);
+        if covers_one_line(old_range) && covers_one_line(new_range) {
+            return false;
+        }
+        let mut anchor = ReviewAnchor {
+            file_index: top.file_index,
+            anchor_key: format!(
+                "hunk|{}|{}|{}",
+                top.file_path,
+                format_opt_range(old_range),
+                format_opt_range(new_range)
+            ),
+            file_path: top.file_path,
+            kind: ReviewTargetKind::Hunk,
+            side: None,
+            old_range,
+            new_range,
+            hunk_id: None,
+            display_idx_hint: top.display_idx_hint,
+            snapshot: None,
+        };
+        self.fill_review_anchor_snapshot(&mut anchor);
+        self.open_review_editor(anchor);
+        true
+    }
+
     pub fn start_hunk_comment(&mut self) {
         if !self.remote_manifest_complete() || !self.require_selected_complete_content() {
             return;

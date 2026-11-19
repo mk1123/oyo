@@ -1,5 +1,7 @@
 use crate::app::menu::MenuHost;
-use crate::app::{App, FilePanelMode, FoldContextDirection, TopbarTabContent, ViewMode};
+use crate::app::{
+    App, FilePanelMode, FoldContextDirection, SelectionToolbarAction, TopbarTabContent, ViewMode,
+};
 use crate::config;
 use crate::keybindings::{
     Dispatch, FileFilterAction, GlobalAction, HelpAction, LineInputAction, NormalAction,
@@ -246,6 +248,9 @@ fn handle_selection_key(app: &mut App, key: KeyEvent) -> bool {
             app.copy_diff_selection();
             app.clear_diff_selection();
             true
+        }
+        Dispatch::Matched(SelectionAction::Comment) => {
+            app.run_selection_toolbar_action(SelectionToolbarAction::Comment)
         }
         Dispatch::Matched(SelectionAction::ShowActions) => app.show_selection_toolbar(),
         Dispatch::Matched(SelectionAction::Left) => app.move_diff_selection(-1, 0),

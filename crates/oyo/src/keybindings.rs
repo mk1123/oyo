@@ -217,6 +217,7 @@ pub(crate) enum LineInputAction {
 pub(crate) enum SelectionAction {
     Cancel,
     Copy,
+    Comment,
     ShowActions,
     Left,
     Right,
@@ -472,6 +473,7 @@ binding_action!(FileFilterAction, [
 binding_action!(SelectionAction, [
     Cancel => ("cancel", "Cancel selection", ["esc"]),
     Copy => ("copy", "Copy selection", ["y"]),
+    Comment => ("comment", "Comment on the selected lines", ["m"]),
     ShowActions => ("show_actions", "Show selection actions", ["enter"]),
     Left => ("left", "Extend left", ["h", "left"]),
     Right => ("right", "Extend right", ["l", "right"]),
@@ -1204,6 +1206,15 @@ mod tests {
         assert_eq!(
             bindings.normal(ctrl('v')),
             Dispatch::Matched(NormalAction::StartBlockSelection)
+        );
+    }
+
+    #[test]
+    fn selection_mode_m_comments_on_the_selection() {
+        let mut bindings = Keybindings::default();
+        assert_eq!(
+            bindings.selection(key('m')),
+            Dispatch::Matched(SelectionAction::Comment)
         );
     }
 

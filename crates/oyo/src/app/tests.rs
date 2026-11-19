@@ -4140,3 +4140,52 @@ fn import_folding_is_off_by_default() {
     assert!(screen.contains("import sys"), "screen:\n{screen}");
     assert!(!screen.contains("import lines"), "screen:\n{screen}");
 }
+
+#[test]
+fn comment_on_a_multi_line_selection_covers_every_selected_line() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    let rows = press(&mut app, &mut terminal, 1, 2);
+    assert_eq!(line_number_at_cursor(&app, &rows), 42);
+    assert!(app.start_keyboard_line_selection());
+    assert!(app.move_diff_selection(0, 2));
+    render_rows(&mut app, &mut terminal);
+
+    assert!(app.run_selection_toolbar_action(SelectionToolbarAction::Comment));
+
+    let anchor = app
+        .review_editor
+        .as_ref()
+        .expect("comment editor opens")
+        .anchor
+        .clone();
+    assert_eq!(
+        anchor.new_range.map(|range| (range.start, range.end)),
+        Some((42, 44))
+    );
+}
+
+#[test]
+fn comment_on_a_one_line_selection_stays_a_line_comment() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    press(&mut app, &mut terminal, 1, 2);
+    assert!(app.start_keyboard_line_selection());
+    render_rows(&mut app, &mut terminal);
+
+    assert!(app.run_selection_toolbar_action(SelectionToolbarAction::Comment));
+
+    let anchor = app
+        .review_editor
+        .as_ref()
+        .expect("comment editor opens")
+        .anchor
+        .clone();
+    assert_eq!(anchor.kind, review::ReviewTargetKind::Line);
+    assert_eq!(
+        anchor.new_range.map(|range| (range.start, range.end)),
+        Some((42, 42))
+    );
+}

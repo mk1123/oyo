@@ -448,7 +448,7 @@ impl App {
         self.run_selection_toolbar_action(SelectionToolbarAction::Custom(idx))
     }
 
-    fn run_selection_toolbar_action(&mut self, action: SelectionToolbarAction) -> bool {
+    pub(crate) fn run_selection_toolbar_action(&mut self, action: SelectionToolbarAction) -> bool {
         match action {
             SelectionToolbarAction::Copy => {
                 self.copy_diff_selection();
@@ -485,22 +485,32 @@ impl App {
         }
     }
 
+    /// Comment on the selected lines: a line comment for one line, a range comment
+    /// covering the first to the last selected line for several.
     fn start_line_comment_for_selection(&mut self) -> bool {
-        let Some(row) = self
+        let rows: Vec<u16> = self
             .diff_selection_segments()
             .into_iter()
             .map(|(row, _, _)| row)
-            .min()
+            .collect();
+        let (Some(first), Some(last)) = (rows.iter().min().copied(), rows.iter().max().copied())
         else {
             return false;
         };
         let Some((_, y, _, _)) = self.diff_view_area else {
             return false;
         };
-        self.start_line_comment_at_screen_row_on_side(
-            y.saturating_add(row),
-            self.diff_selection_review_side(),
-        )
+        let side = self.diff_selection_review_side();
+        if first != last
+            && self.start_range_comment_at_screen_rows(
+                y.saturating_add(first),
+                y.saturating_add(last),
+                side,
+            )
+        {
+            return true;
+        }
+        self.start_line_comment_at_screen_row_on_side(y.saturating_add(first), side)
     }
 
     fn diff_selection_review_side(&self) -> Option<ReviewSide> {
