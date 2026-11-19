@@ -383,6 +383,9 @@ fn handle_review_editor_key(app: &mut App, key: KeyEvent) {
             let _ = app.review_accept_mention();
         }
         Dispatch::Matched(ReviewEditorAction::Backspace) => app.review_backspace(),
+        Dispatch::Matched(ReviewEditorAction::DeleteWordBackward) => {
+            app.review_delete_word_backward()
+        }
         Dispatch::Matched(ReviewEditorAction::Delete) => app.review_delete(),
         Dispatch::Matched(ReviewEditorAction::Left) => app.review_move_left(),
         Dispatch::Matched(ReviewEditorAction::Right) => app.review_move_right(),
@@ -950,7 +953,7 @@ fn dispatch_normal_action(
                     app.next_file();
                 } else if app.stepping {
                     app.next_step();
-                } else {
+                } else if !app.move_line_cursor(1) {
                     app.scroll_down();
                 }
             }
@@ -967,7 +970,7 @@ fn dispatch_normal_action(
                     app.prev_file();
                 } else if app.stepping {
                     app.prev_step();
-                } else {
+                } else if !app.move_line_cursor(-1) {
                     app.scroll_up();
                 }
             }
@@ -1097,6 +1100,10 @@ fn dispatch_normal_action(
         NormalAction::ToggleFileReviewed => {
             app.reset_count();
             app.toggle_current_file_reviewed();
+        }
+        NormalAction::ReviewFileAndNext => {
+            app.reset_count();
+            app.review_file_and_next();
         }
         NormalAction::ToggleIncrementalReview => {
             app.reset_count();

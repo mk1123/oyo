@@ -1048,31 +1048,32 @@ fn render_old_pane(
 
             let show_extent = super::show_extent_marker(app, view_line);
             // Gutter marker: primary marker for focus, extent marker for hunk nav, blank otherwise
-            let (active_marker, active_style) = if view_line.is_primary_active {
-                (
-                    primary_marker.as_str(),
-                    Style::default()
-                        .fg(app.theme.primary)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else if show_extent {
-                (
-                    super::extent_marker_text(
-                        extent_marker.as_str(),
-                        extent_marker_deleted.as_str(),
-                        view_line,
-                    ),
-                    super::extent_marker_style(
-                        app,
-                        view_line.kind,
-                        view_line.has_changes,
-                        view_line.old_line,
-                        view_line.new_line,
-                    ),
-                )
-            } else {
-                (" ", Style::default())
-            };
+            let (active_marker, active_style) =
+                if view_line.is_primary_active && app.shows_active_marker() {
+                    (
+                        primary_marker.as_str(),
+                        Style::default()
+                            .fg(app.theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else if show_extent {
+                    (
+                        super::extent_marker_text(
+                            extent_marker.as_str(),
+                            extent_marker_deleted.as_str(),
+                            view_line,
+                        ),
+                        super::extent_marker_style(
+                            app,
+                            view_line.kind,
+                            view_line.has_changes,
+                            view_line.old_line,
+                            view_line.new_line,
+                        ),
+                    )
+                } else {
+                    (" ", Style::default())
+                };
 
             // Build gutter line
             let mut gutter_spans = vec![
@@ -2118,31 +2119,32 @@ fn render_new_pane(
 
             let show_extent = super::show_extent_marker(app, view_line);
             // Gutter marker: right-pane primary marker for focus, extent marker for hunk nav, blank otherwise
-            let (active_marker, active_style) = if view_line.is_primary_active {
-                (
-                    primary_marker_right.as_str(),
-                    Style::default()
-                        .fg(app.theme.primary)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else if show_extent {
-                (
-                    super::extent_marker_text(
-                        extent_marker_right.as_str(),
-                        extent_marker_deleted.as_str(),
-                        view_line,
-                    ),
-                    super::extent_marker_style(
-                        app,
-                        view_line.kind,
-                        view_line.has_changes,
-                        view_line.old_line,
-                        view_line.new_line,
-                    ),
-                )
-            } else {
-                (" ", Style::default())
-            };
+            let (active_marker, active_style) =
+                if view_line.is_primary_active && app.shows_active_marker() {
+                    (
+                        primary_marker_right.as_str(),
+                        Style::default()
+                            .fg(app.theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    )
+                } else if show_extent {
+                    (
+                        super::extent_marker_text(
+                            extent_marker_right.as_str(),
+                            extent_marker_deleted.as_str(),
+                            view_line,
+                        ),
+                        super::extent_marker_style(
+                            app,
+                            view_line.kind,
+                            view_line.has_changes,
+                            view_line.old_line,
+                            view_line.new_line,
+                        ),
+                    )
+                } else {
+                    (" ", Style::default())
+                };
 
             // Build gutter line
             let mut gutter_spans = vec![

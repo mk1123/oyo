@@ -1,3 +1,4 @@
+use super::import_fold::{import_run_len, ImportSyntax};
 use super::{AnimationPhase, FoldContextExpansion, FoldContextKey, FoldContextRegion, ViewMode};
 use crate::config::FoldContextMode;
 use oyo_core::{Change, ChangeKind, LineKind, StepDirection, ViewLine, ViewSpan, ViewSpanKind};
@@ -322,6 +323,40 @@ pub(crate) fn fold_context_label(hidden_lines: usize) -> String {
     format!(" {hidden_lines} unchanged {unit} ")
 }
 
+pub(crate) fn fold_import_label(hidden_lines: usize) -> String {
+    let unit = if hidden_lines == 1 { "line" } else { "lines" };
+    format!(" {hidden_lines} unchanged import {unit} ")
+}
+
+/// Lines in the unchanged import run starting at `start`, or 0. Lines with changes or
+/// comments end the run, so changed imports stay visible.
+fn unchanged_import_run_len(
+    view: &[ViewLine],
+    start: usize,
+    syntax: Option<ImportSyntax>,
+    comment_anchors: &FxHashSet<usize>,
+) -> usize {
+    let Some(syntax) = syntax else {
+        return 0;
+    };
+    let texts: Vec<&str> = view[start..]
+        .iter()
+        .take_while(|line| {
+            matches!(line.kind, LineKind::Context)
+                && !line.has_changes
+                && (line.old_line.is_some() || line.new_line.is_some())
+                && !comment_anchors.contains(&line.change_id)
+        })
+        .map(|line| line.content.as_str())
+        .collect();
+    let len = import_run_len(&texts, syntax);
+    if len >= 2 {
+        len
+    } else {
+        0
+    }
+}
+
 fn folded_context_line(text: String, change_id: usize) -> ViewLine {
     ViewLine {
         content: text.clone(),
@@ -359,6 +394,7 @@ pub(crate) fn fold_context_view(
         expansions,
         comment_anchors,
         false,
+        None,
     )
 }
 
@@ -370,6 +406,7 @@ pub(crate) fn fold_context_view_with_expand_all(
     expansions: &FxHashMap<FoldContextKey, FoldContextExpansion>,
     comment_anchors: &FxHashSet<usize>,
     expand_all: bool,
+    imports: Option<ImportSyntax>,
 ) -> (Vec<ViewLine>, Vec<FoldContextRegion>) {
     if !mode.is_enabled() || view.is_empty() {
         return (view, Vec::new());
@@ -378,6 +415,46 @@ pub(crate) fn fold_context_view_with_expand_all(
     let mut regions = Vec::new();
     let mut idx = 0usize;
     while idx < view.len() {
+        // An unchanged import block folds completely, inside or outside a hunk.
+        let import_len = unchanged_import_run_len(&view, idx, imports, comment_anchors);
+        if import_len > 0 {
+            let end = idx + import_len;
+            let key = FoldContextKey {
+                file_index,
+                start_change_id: view[idx].change_id,
+                end_change_id: view[end - 1].change_id,
+            };
+            let expansion = if expand_all {
+                FoldContextExpansion {
+                    top: usize::MAX,
+                    bottom: 0,
+                }
+            } else {
+                expansions.get(&key).copied().unwrap_or_default()
+            };
+            let top = expansion.top.min(import_len);
+            let bottom = expansion.bottom.min(import_len - top);
+            let hidden = import_len - top - bottom;
+            if hidden == 0 {
+                out.extend(view[idx..end].iter().cloned());
+            } else {
+                out.extend(view[idx..idx + top].iter().cloned());
+                out.push(folded_context_line(
+                    format!("↑{}↓", fold_import_label(hidden)),
+                    key.start_change_id,
+                ));
+                out.extend(view[end - bottom..end].iter().cloned());
+                regions.push(FoldContextRegion {
+                    key,
+                    hidden_lines: hidden,
+                    imports: true,
+                    scope_line: view[idx + top].new_line,
+                    scope_hint: None,
+                });
+            }
+            idx = end;
+            continue;
+        }
         let line = &view[idx];
         if matches!(line.kind, LineKind::Context)
             && line.hunk_index.is_none()
@@ -392,6 +469,7 @@ pub(crate) fn fold_context_view_with_expand_all(
                     && next.hunk_index.is_none()
                     && !next.has_changes
                     && !comment_anchors.contains(&next.change_id)
+                    && unchanged_import_run_len(&view, end, imports, comment_anchors) == 0
                 {
                     end += 1;
                 } else {
@@ -438,6 +516,7 @@ pub(crate) fn fold_context_view_with_expand_all(
                     regions.push(FoldContextRegion {
                         key,
                         hidden_lines: hidden,
+                        imports: false,
                         scope_line: view[start + top].new_line,
                         scope_hint: None,
                     });

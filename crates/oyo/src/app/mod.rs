@@ -33,6 +33,8 @@ mod file_panel;
 mod files;
 pub(crate) mod grep;
 mod history;
+pub(crate) mod import_fold;
+mod line_cursor;
 pub(crate) mod menu;
 mod navigation;
 pub(crate) mod palette;
@@ -72,7 +74,9 @@ use types::{
     SyntaxScopeCache,
 };
 use utils::{allow_overscroll_state, copy_to_clipboard, max_scroll};
-pub(crate) use utils::{display_metrics, fold_context_label, is_conflict_marker, is_fold_line};
+pub(crate) use utils::{
+    display_metrics, fold_context_label, fold_import_label, is_conflict_marker, is_fold_line,
+};
 
 type UnifiedHunkCacheKey = (usize, ViewMode, FoldContextMode, bool, usize, usize, usize);
 type SplitHunkCacheKey = (usize, FoldContextMode, bool, bool, usize, usize, usize);
@@ -566,6 +570,10 @@ pub struct App {
     max_line_widths_no_step: Vec<usize>,
     /// Line wrap mode (when true, horizontal scroll is ignored)
     pub line_wrap: bool,
+    /// No-step line cursor (`ui.line_cursor`).
+    pub line_cursor: bool,
+    /// Fold unchanged import blocks (`ui.fold_imports`).
+    pub fold_imports: bool,
     /// Collapse long unchanged blocks
     pub fold_context: FoldContextMode,
     /// Context lines kept on each side of an expandable fold
@@ -1092,6 +1100,16 @@ pub struct App {
     pub(crate) review_editor_toolbar_hover: Option<ReviewEditorToolbarAction>,
     /// Hovered row for the add-comment button.
     pub(crate) review_line_add_row: Option<u16>,
+    /// Line the cursor moves to and centres on after the next frame (no-step mode).
+    pub(crate) line_cursor_target: Option<line_cursor::LineCursorTarget>,
+    /// Scroll offset the last centring attempt asked for, to detect the end of the file.
+    pub(crate) line_cursor_last_scroll: Option<usize>,
+    /// Scroll offset of the last settled frame; a different offset means the view was
+    /// scrolled, and the cursor moves to the middle row.
+    pub(crate) line_cursor_seen_scroll: Option<usize>,
+    /// File the line cursor was last placed in; opening another file moves it to that
+    /// file's active change.
+    pub(crate) line_cursor_file: Option<usize>,
     /// Hovered diff side in split view.
     pub(crate) review_line_add_side: Option<review::ReviewSide>,
     /// Last diff-line anchor hovered by the mouse.
@@ -1345,6 +1363,8 @@ impl App {
             max_line_widths_step: vec![0; file_count],
             max_line_widths_no_step: vec![0; file_count],
             line_wrap: false,
+            line_cursor: false,
+            fold_imports: false,
             fold_context: FoldContextMode::default(),
             fold_context_lines: 3,
             fold_context_expansions: FxHashMap::default(),
@@ -1652,6 +1672,10 @@ impl App {
             review_editor_toolbar_scroll: 0,
             review_editor_toolbar_hover: None,
             review_line_add_row: None,
+            line_cursor_target: None,
+            line_cursor_last_scroll: None,
+            line_cursor_seen_scroll: None,
+            line_cursor_file: None,
             review_line_add_side: None,
             last_hovered_review_anchor: None,
             review_unified_line_rows: Vec::new(),
@@ -2920,6 +2944,13 @@ impl App {
             &self.fold_context_expansions,
             &fold_comment_anchors,
             expand_all_context,
+            if self.fold_imports {
+                self.multi_diff
+                    .current_file()
+                    .and_then(|file| import_fold::ImportSyntax::from_path(&file.display_name))
+            } else {
+                None
+            },
         );
         if !fold_context_regions.is_empty() {
             self.ensure_current_fold_scope_cache();

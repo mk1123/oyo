@@ -62,6 +62,8 @@ pub(crate) enum FoldContextDirection {
 pub(crate) struct FoldContextRegion {
     pub(crate) key: FoldContextKey,
     pub(crate) hidden_lines: usize,
+    /// The fold hides an unchanged import block (`ui.fold_imports`).
+    pub(crate) imports: bool,
     pub(crate) scope_line: Option<usize>,
     pub(crate) scope_hint: Option<String>,
 }

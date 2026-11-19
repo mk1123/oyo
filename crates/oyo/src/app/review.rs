@@ -1910,6 +1910,31 @@ impl App {
         true
     }
 
+    /// Mark the current file reviewed, if it is not already, and open the next file.
+    /// Unlike `toggle_current_file_reviewed`, a second press never unmarks the file.
+    pub(crate) fn review_file_and_next(&mut self) {
+        if !self.review_mode {
+            return;
+        }
+        let file_index = self.review_live_diff().selected_index;
+        let reviewed = self
+            .review_live_diff()
+            .files
+            .get(file_index)
+            .map(|file| file.display_name.clone())
+            .zip(self.review_file_fingerprint(file_index))
+            .is_some_and(|(path, fingerprint)| {
+                self.reviewed_files.get(&path) == Some(&fingerprint)
+            });
+        if !reviewed && !self.toggle_current_file_reviewed() {
+            return;
+        }
+        // Marking can already have moved off the file (incremental review hides it).
+        if self.review_live_diff().selected_index == file_index {
+            self.next_file();
+        }
+    }
+
     fn persist_reviewed_file(&mut self, file_path: &str, fingerprint: Option<&str>) {
         if !self.review_mode || !self.review_persist_enabled {
             return;
@@ -5444,7 +5469,14 @@ impl App {
             };
             return self.request_delete_comment_by_anchor(anchor.anchor_key);
         }
-        let Some(anchor) = self.resolve_line_review_anchor() else {
+        let anchor = match self.line_cursor_display_idx() {
+            Some(display_idx) => self.resolve_line_review_anchor_at_display_idx_on_side(
+                display_idx,
+                self.review_line_add_side,
+            ),
+            None => self.resolve_line_review_anchor(),
+        };
+        let Some(anchor) = anchor else {
             return false;
         };
         self.request_delete_comment_by_anchor(anchor.anchor_key)
@@ -5951,6 +5983,28 @@ impl App {
         let prev = prev_char_boundary(&editor.text, editor.cursor);
         editor.text.replace_range(prev..editor.cursor, "");
         editor.cursor = prev;
+        self.refresh_review_mention_picker();
+        self.touch_review_state();
+        self.persist_review_session();
+    }
+
+    /// Delete back to the start of the previous word, skipping spaces before it first.
+    pub fn review_delete_word_backward(&mut self) {
+        let Some(editor) = self.review_editor.as_mut() else {
+            return;
+        };
+        let before = &editor.text[..editor.cursor];
+        let trimmed = before.trim_end_matches(|c: char| c.is_whitespace());
+        let start = trimmed
+            .char_indices()
+            .rev()
+            .find(|(_, c)| c.is_whitespace())
+            .map_or(0, |(idx, c)| idx + c.len_utf8());
+        if start == editor.cursor {
+            return;
+        }
+        editor.text.replace_range(start..editor.cursor, "");
+        editor.cursor = start;
         self.refresh_review_mention_picker();
         self.touch_review_state();
         self.persist_review_session();
@@ -7239,9 +7293,14 @@ impl App {
             return None;
         }
 
-        let focus_display_idx = visible
-            .iter()
-            .find_map(|(idx, line)| line.is_primary_active.then_some(*idx))
+        // The line cursor, when it is on a diff line, picks the hunk.
+        let focus_display_idx = self
+            .line_cursor_display_idx()
+            .or_else(|| {
+                visible
+                    .iter()
+                    .find_map(|(idx, line)| line.is_primary_active.then_some(*idx))
+            })
             .or_else(|| {
                 visible
                     .iter()
@@ -7313,7 +7372,7 @@ impl App {
         Some(anchor)
     }
 
-    fn review_visible_lines_with_idx(&mut self) -> Vec<(usize, ViewLine)> {
+    pub(crate) fn review_visible_lines_with_idx(&mut self) -> Vec<(usize, ViewLine)> {
         if self.multi_diff.file_count() == 0 {
             return Vec::new();
         }

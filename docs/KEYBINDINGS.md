@@ -154,8 +154,8 @@ Use each mode as `[keybindings.<mode>]`.
 | Action | Default keys | What it does |
 | --- | --- | --- |
 | `quit` | `q` | Quit |
-| `step_down` | `j`, `down` | Step forward |
-| `step_up` | `k`, `up` | Step backward |
+| `step_down` | `j`, `down` | Step forward. Without step mode, move the line cursor down one diff line |
+| `step_up` | `k`, `up` | Step backward. Without step mode, move the line cursor up one diff line |
 | `next_hunk` | `l`, `right` | Go to the next hunk |
 | `prev_hunk` | `h`, `left` | Go to the previous hunk |
 | `hunk_start` | `b` | Go to the start of the hunk |
@@ -173,6 +173,7 @@ Use each mode as `[keybindings.<mode>]`.
 | `toggle_path_popup` | `ctrl-g` | Show the full file path |
 | `open_editor` | `o`, `ctrl-e` | Open the file in your editor |
 | `toggle_file_reviewed` | `g r` | Mark the current file as reviewed or unreviewed. With `review.incremental`, also hides it and opens the next file |
+| `review_file_and_next` | unbound | Mark the current file reviewed and open the next file. A second press does not unmark it |
 | `toggle_incremental_review` | unbound | Turn incremental review on or off for this session |
 | `goto_start` | `g g`, `home` | Go to the start |
 | `goto_end` | `G`, `end` | Go to the end |
@@ -219,8 +220,8 @@ Use each mode as `[keybindings.<mode>]`.
 | `focus_prev_comment` | `{` | Focus the previous review comment |
 | `next_conflict` | `c` | Go to the next conflict |
 | `prev_conflict` | `C` | Go to the previous conflict |
-| `line_comment` | `m` | Comment on the hovered diff line, or the cursor line when no line is hovered |
-| `hunk_comment` | `M` | Add or update a hunk comment |
+| `line_comment` | `m` | Comment on the line cursor. The mouse moves the line cursor when it hovers a diff line |
+| `hunk_comment` | `M` | Add or update a comment on the hunk under the line cursor |
 | `clear_comments` | `ctrl-x` | Clear all comments |
 | `remove_line_comment` | `x` | Remove a line comment |
 | `remove_hunk_comment` | `X` | Remove a hunk comment |
@@ -254,6 +255,7 @@ folds.
 | `insert_newline` | `enter` | Insert a new line |
 | `accept_mention` | `tab` | Accept the mention |
 | `backspace` | `backspace` | Delete the character before the cursor |
+| `delete_word_backward` | `alt-backspace`, `ctrl-w` | Delete the word before the cursor |
 | `delete` | `delete` | Delete the character under the cursor |
 | `left` | `left` | Move left |
 | `right` | `right` | Move right |

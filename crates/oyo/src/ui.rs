@@ -815,6 +815,19 @@ fn draw_all_reviewed_tab(
 
 /// Main drawing function
 pub fn draw(frame: &mut Frame, app: &mut App) {
+    draw_frame(frame, app);
+    // Centring the line cursor needs the rows of the frame just drawn. Redraw in the same
+    // call, so the terminal only receives the final frame.
+    for _ in 0..4 {
+        if !app.settle_line_cursor() {
+            break;
+        }
+        frame.buffer_mut().reset();
+        draw_frame(frame, app);
+    }
+}
+
+fn draw_frame(frame: &mut Frame, app: &mut App) {
     app.session_rename_footer_hits.clear();
     app.restore_remote_viewport();
     app.begin_remote_position_frame(frame.area());
@@ -6050,11 +6063,37 @@ fn draw_review_line_add_button(frame: &mut Frame, app: &mut App) {
     if row < y || row >= y.saturating_add(height) {
         return;
     }
+    // The add-comment row is also the line cursor. Shade the cells of that row that have
+    // no background of their own, so added and removed lines keep their diff colours.
+    let line_cursor = app.line_cursor_applies();
+    let (diff_x, _, diff_width, _) = app.diff_view_area.unwrap_or_default();
+    let cursor_bg = app
+        .theme
+        .background_element
+        .or(app.theme.background_panel)
+        .unwrap_or(Color::Indexed(237));
+    let buffer = frame.buffer_mut();
+    for col in diff_x..diff_x.saturating_add(diff_width) {
+        if !line_cursor {
+            break;
+        }
+        if let Some(cell) = buffer.cell_mut((col, row)) {
+            // Plain cells get the cursor colour. Diff-coloured cells are mixed toward the
+            // text colour, so the row keeps its added/removed hue but stands out from the
+            // lines around it in dark and light themes.
+            let bg = if cell.bg == Color::Reset || Some(cell.bg) == app.theme.background {
+                cursor_bg
+            } else {
+                crate::color::blend_colors(cell.bg, app.theme.text, 0.25).unwrap_or(cursor_bg)
+            };
+            cell.set_bg(bg);
+        }
+    }
     let Some(x) = app.review_line_add_button_x() else {
         return;
     };
     let style = Style::default()
-        .fg(if app.review_line_add_hover {
+        .fg(if line_cursor || app.review_line_add_hover {
             app.theme.accent
         } else {
             app.theme.text_muted

@@ -68,6 +68,8 @@ Use `[ui]` for general display and navigation defaults.
 | `confirm_quit` | `true`, `false` | `true` | Asks for confirmation before quitting the TUI |
 | `view_mode` | `unified`, `split`, `evolution`, `blame`, `preview` | `unified` | Sets the default view mode |
 | `line_wrap` | `true`, `false` | `false` | Wraps long lines instead of horizontal scrolling |
+| `line_cursor` | `true`, `false` | `false` | In no-step mode, shows one line cursor instead of the active-change marker. `j`/`k` move it by line and `l`/`h` by hunk, it stays in the middle of the view, scrolling keeps it there, and `m`, `M`, `x` and `V` act on it |
+| `fold_imports` | `true`, `false` | `false` | Folds unchanged import blocks into one row (Python, JavaScript/TypeScript, Rust, Go). Changed import lines stay visible |
 | `fold_context` | `off`, `expandable` | `expandable` | Sets whether Oyo folds long unchanged blocks |
 | `fold_context_lines` | non-negative integer | `3` | Keeps this many context lines on each side of a fold |
 | `scrollbar` | `true`, `false` | `true` | Shows the diff and file panel scrollbars |

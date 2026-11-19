@@ -1736,16 +1736,24 @@ impl App {
                     && row < hit.y.saturating_add(hit.height)
             })
             .map(|hit| (hit.key, hit.direction));
-        let (review_line_add_row, review_line_add_hover) = if matches!(
+        let file_tab = matches!(
             self.active_topbar_content(),
             Some(TopbarTabContent::File(_))
-        ) {
+        );
+        let (review_line_add_row, review_line_add_hover) = if file_tab {
             self.review_line_add_hover_at(column, row)
         } else {
             (None, false)
         };
-        let review_line_add_side =
-            review_line_add_row.and_then(|_| self.review_side_at_screen_column(column));
+        // The add-comment row is also the keyboard line cursor, so on a file tab moving the
+        // mouse off the diff lines keeps it where it was instead of clearing it.
+        let (review_line_add_row, review_line_add_side) = match review_line_add_row {
+            Some(row) => (Some(row), self.review_side_at_screen_column(column)),
+            None if file_tab && self.line_cursor_applies() => {
+                (self.review_line_add_row, self.review_line_add_side)
+            }
+            None => (None, None),
+        };
         let review_preview_hit = self.review_preview_boxes.iter().rev().find_map(|hit| {
             let end_x = hit.x.saturating_add(hit.width);
             let end_y = hit.y.saturating_add(hit.height);

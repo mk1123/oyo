@@ -1768,6 +1768,8 @@ fn apply_config_to_app(app: &mut App, config: &config::Config, args: &Args, ligh
     app.topbar = config.ui.topbar;
     app.menu_bar = config.ui.menu_bar;
     app.line_wrap = config.ui.line_wrap;
+    app.line_cursor = config.ui.line_cursor;
+    app.fold_imports = config.ui.fold_imports;
     app.set_fold_context_lines(config.ui.fold_context_lines);
     app.set_fold_context_mode(config.ui.fold_context);
     app.scrollbar_visible = config.ui.scrollbar;

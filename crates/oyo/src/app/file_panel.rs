@@ -336,6 +336,8 @@ impl App {
             } else {
                 self.select_file(item_idx);
             }
+            // Clicking a file opens it for reading, so keys go to the diff.
+            self.file_list_focused = false;
             return true;
         }
 

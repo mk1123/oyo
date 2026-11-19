@@ -817,6 +817,7 @@ impl App {
     fn selection_cursor_or_first(&self) -> Option<((u16, u16), (u16, u16))> {
         self.diff_selection
             .map(|selection| (selection.end, (selection.col_start, selection.col_end)))
+            .or_else(|| self.line_cursor_selection_cell())
             .or_else(|| {
                 self.diff_selection_cursor
                     .map(|cursor| (cursor.point, (cursor.col_start, cursor.col_end)))

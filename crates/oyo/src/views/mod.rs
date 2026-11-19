@@ -104,7 +104,11 @@ pub(crate) fn fold_context_band(
     action_idx: Option<usize>,
 ) -> Option<FoldContextBand> {
     let region = app.fold_context_region_for_line(line)?;
-    let full_label = crate::app::fold_context_label(region.hidden_lines);
+    let full_label = if region.imports {
+        crate::app::fold_import_label(region.hidden_lines)
+    } else {
+        crate::app::fold_context_label(region.hidden_lines)
+    };
     let compact_label = format!(" {} ", region.hidden_lines);
     let (up_key, label, down_key) = if let Some(idx) = action_idx {
         let up = crate::app::review::review_index_action_label("u", idx);

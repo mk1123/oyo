@@ -805,6 +805,11 @@ pub struct UiConfig {
     pub view_mode: Option<String>,
     /// Enable line wrapping (default: false, uses horizontal scroll instead)
     pub line_wrap: bool,
+    /// In no-step mode, `j`/`k` move a line cursor kept in the middle of the view,
+    /// `l`/`h` move it between hunks, and comments and selections start from it
+    pub line_cursor: bool,
+    /// Fold unchanged import blocks completely (Python, JavaScript/TypeScript, Rust, Go)
+    pub fold_imports: bool,
     /// Collapse long unchanged blocks ("off" or "expandable")
     pub fold_context: FoldContextMode,
     /// Context lines kept on each side of an expandable fold
@@ -869,6 +874,8 @@ impl Default for UiConfig {
             confirm_quit: true,
             view_mode: None,
             line_wrap: false,
+            line_cursor: false,
+            fold_imports: false,
             fold_context: FoldContextMode::Expandable,
             fold_context_lines: 3,
             scrollbar: true,

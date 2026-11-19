@@ -1427,12 +1427,11 @@ impl App {
             .iter()
             .enumerate()
             .filter_map(|(idx, start)| start.map(|s| (idx, s.idx)))
-            .filter(|&(_, start)| {
-                if inclusive {
-                    start <= self.scroll_offset
-                } else {
-                    start < self.scroll_offset
-                }
+            .filter(|&(_, start)| match self.line_cursor_display_idx() {
+                // The line cursor is inside or below a hunk that starts at or before it.
+                Some(cursor) => start <= cursor,
+                None if inclusive => start <= self.scroll_offset,
+                None => start < self.scroll_offset,
             })
             .map(|(idx, _)| idx)
             .next_back();
@@ -1499,7 +1498,9 @@ impl App {
             .iter()
             .enumerate()
             .filter_map(|(idx, start)| start.map(|s| (idx, s)))
-            .rfind(|&(_, start)| start.idx < self.scroll_offset)
+            .rfind(|&(_, start)| {
+                start.idx < self.line_cursor_display_idx().unwrap_or(self.scroll_offset)
+            })
     }
 
     fn prev_hunk_from_index(
@@ -1648,6 +1649,9 @@ impl App {
             if self.auto_center {
                 self.needs_scroll_to_active = true;
             }
+            if self.line_cursor_applies() {
+                self.set_line_cursor_target(super::line_cursor::LineCursorTarget::ActiveChange);
+            }
             self.clear_hunk_edge_hint();
             self.set_blame_hunk_hint();
             self.refresh_blame_toggle_hint();
@@ -1733,6 +1737,9 @@ impl App {
             self.multi_diff.current_navigator().set_hunk_scope(true);
             if self.auto_center {
                 self.needs_scroll_to_active = true;
+            }
+            if self.line_cursor_applies() {
+                self.set_line_cursor_target(super::line_cursor::LineCursorTarget::ActiveChange);
             }
             self.clear_hunk_edge_hint();
             self.set_blame_hunk_hint();
@@ -2000,6 +2007,9 @@ impl App {
             if self.auto_center {
                 self.needs_scroll_to_active = true;
             }
+            if self.line_cursor_applies() {
+                self.set_line_cursor_target(super::line_cursor::LineCursorTarget::ActiveChange);
+            }
             self.set_blame_hunk_hint();
             self.refresh_blame_toggle_hint();
         }
@@ -2078,6 +2088,9 @@ impl App {
             self.multi_diff.current_navigator().set_hunk_scope(true);
             if self.auto_center {
                 self.needs_scroll_to_active = true;
+            }
+            if self.line_cursor_applies() {
+                self.set_line_cursor_target(super::line_cursor::LineCursorTarget::ActiveChange);
             }
             self.set_blame_hunk_hint();
             self.refresh_blame_toggle_hint();
@@ -2403,6 +2416,9 @@ impl App {
             self.multi_diff.current_navigator().set_hunk_scope(true);
             if self.auto_center {
                 self.needs_scroll_to_active = true;
+            }
+            if self.line_cursor_applies() {
+                self.set_line_cursor_target(super::line_cursor::LineCursorTarget::ActiveChange);
             }
             self.set_blame_hunk_hint();
             self.refresh_blame_toggle_hint();

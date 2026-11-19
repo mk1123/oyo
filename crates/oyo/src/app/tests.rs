@@ -3690,3 +3690,453 @@ fn pending_remote_content_finishes_initial_no_step_entry() {
     assert_eq!(app.stats(), (1, 1));
     let _ = std::fs::remove_dir_all(root);
 }
+
+// Line cursor (no-step mode): one cursor and no active-change marker. `j`/`k` move it
+// one line, `l`/`h` move it to the next or previous hunk, and after each keyboard move
+// the view keeps the cursor in the middle row, except near the start or end of a file.
+// Scrolling keeps the cursor in its row. `m`, `M`, `x` and `V` act on the cursor line.
+
+fn line_cursor_app(
+    old: String,
+    new: String,
+    height: u16,
+) -> (
+    App,
+    ratatui::Terminal<ratatui::backend::TestBackend>,
+    DiffSettingsGuard,
+) {
+    // Other tests change the global diff settings; hold their lock while this diff renders.
+    let guard = DiffSettingsGuard::default();
+    let diff = MultiFileDiff::from_file_pair(
+        std::path::PathBuf::from("a.txt"),
+        std::path::PathBuf::from("a.txt"),
+        old,
+        new,
+    );
+    let mut app = App::new(diff, ViewMode::UnifiedPane, 100, false, None);
+    app.set_review_persist_enabled(false);
+    app.enable_review_mode();
+    app.set_fold_context_mode(crate::config::FoldContextMode::Off);
+    app.line_cursor = true;
+    // No step mode, the `oy` default: every change applied, opening on the first hunk.
+    app.stepping = false;
+    app.enter_no_step_mode();
+    let terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, height)).unwrap();
+    (app, terminal, guard)
+}
+
+fn render_rows(
+    app: &mut App,
+    terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>,
+) -> Vec<String> {
+    terminal.draw(|frame| crate::ui::draw(frame, app)).unwrap();
+    let buffer = terminal.backend().buffer();
+    (0..buffer.area.height)
+        .map(|y| {
+            (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect()
+        })
+        .collect()
+}
+
+fn cursor_row_text(app: &App, rows: &[String]) -> String {
+    rows[app.review_line_add_row.expect("cursor row") as usize].clone()
+}
+
+/// The `N` of the `line N` text shown on the cursor row.
+fn line_number_at_cursor(app: &App, rows: &[String]) -> usize {
+    let text = cursor_row_text(app, rows);
+    let start = text
+        .find("line ")
+        .unwrap_or_else(|| panic!("no line text on cursor row: {text:?}"));
+    text[start + 5..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .parse()
+        .unwrap()
+}
+
+fn middle_row(app: &App) -> u16 {
+    let (_, y, _, height) = app.diff_view_area.unwrap();
+    y + height / 2
+}
+
+fn numbered_lines(count: usize) -> String {
+    (1..=count).map(|i| format!("line {i}\n")).collect()
+}
+
+fn change_lines(count: usize, changed: &[usize]) -> (String, String) {
+    let old = numbered_lines(count);
+    let new = (1..=count)
+        .map(|i| {
+            if changed.contains(&i) {
+                format!("line {i} changed\n")
+            } else {
+                format!("line {i}\n")
+            }
+        })
+        .collect();
+    (old, new)
+}
+
+fn press(
+    app: &mut App,
+    terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>,
+    delta: isize,
+    times: usize,
+) -> Vec<String> {
+    let mut rows = Vec::new();
+    for _ in 0..times {
+        app.move_line_cursor(delta);
+        rows = render_rows(app, terminal);
+    }
+    rows
+}
+
+#[test]
+fn line_cursor_opens_on_the_first_change_in_the_middle_row() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 40);
+    assert_eq!(app.review_line_add_row, Some(middle_row(&app)));
+}
+
+#[test]
+fn j_and_k_move_one_line_and_keep_the_cursor_in_the_middle_row() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        let rows = press(&mut app, &mut terminal, 1, 1);
+        seen.push(line_number_at_cursor(&app, &rows));
+        assert_eq!(app.review_line_add_row, Some(middle_row(&app)));
+    }
+    assert_eq!(seen, vec![41, 42, 43]);
+    let rows = press(&mut app, &mut terminal, -1, 2);
+    assert_eq!(line_number_at_cursor(&app, &rows), 41);
+    assert_eq!(app.review_line_add_row, Some(middle_row(&app)));
+}
+
+#[test]
+fn line_cursor_moves_toward_the_edge_at_the_start_of_a_file() {
+    let (old, new) = change_lines(80, &[3]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    let rows = press(&mut app, &mut terminal, -1, 5);
+    assert_eq!(line_number_at_cursor(&app, &rows), 1);
+    assert_eq!(app.scroll_offset, 0);
+}
+
+#[test]
+fn l_and_h_move_the_cursor_between_hunks() {
+    let (old, new) = change_lines(120, &[5, 50, 100]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 5);
+
+    app.next_hunk_scroll();
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 50);
+    assert_eq!(app.review_line_add_row, Some(middle_row(&app)));
+
+    app.next_hunk_scroll();
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 100);
+
+    app.prev_hunk_scroll();
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 50);
+}
+
+#[test]
+fn l_starts_from_the_cursor_after_j_moves_it() {
+    let (old, new) = change_lines(120, &[5, 50, 100]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    // Walk past the second hunk with `j`; `l` then goes to the third, `h` back to the second.
+    press(&mut app, &mut terminal, 1, 60);
+    app.next_hunk_scroll();
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 100);
+    press(&mut app, &mut terminal, -1, 20);
+    app.prev_hunk_scroll();
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 50);
+}
+
+#[test]
+fn scrolling_keeps_the_cursor_in_its_row() {
+    let (old, new) = change_lines(120, &[50]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    let rows = render_rows(&mut app, &mut terminal);
+    let before = line_number_at_cursor(&app, &rows);
+    for _ in 0..5 {
+        app.scroll_down();
+    }
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(app.review_line_add_row, Some(middle_row(&app)));
+    assert_eq!(line_number_at_cursor(&app, &rows), before + 5);
+}
+
+#[test]
+fn m_comments_on_the_cursor_line_and_x_removes_it() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    let rows = press(&mut app, &mut terminal, 1, 4);
+    let line = line_number_at_cursor(&app, &rows);
+    app.start_line_comment();
+    let editor = app.review_editor.as_ref().expect("comment editor opens");
+    assert_eq!(editor.anchor.new_range.map(|range| range.start), Some(line));
+}
+
+#[test]
+fn hunk_comment_targets_the_hunk_under_the_cursor() {
+    let (old, new) = change_lines(120, &[5, 50]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    app.next_hunk_scroll();
+    render_rows(&mut app, &mut terminal);
+    app.start_hunk_comment();
+    let range = app
+        .review_editor
+        .as_ref()
+        .expect("comment editor opens")
+        .anchor
+        .new_range
+        .expect("hunk range");
+    assert!(
+        range.start <= 50 && range.end >= 50,
+        "hunk {range:?} does not contain line 50"
+    );
+}
+
+#[test]
+fn line_selection_starts_at_the_cursor_row() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    press(&mut app, &mut terminal, 1, 3);
+    let cursor = app.review_line_add_row.unwrap();
+    assert!(app.start_keyboard_line_selection());
+    let rows: Vec<u16> = app
+        .diff_selection_ranges()
+        .iter()
+        .map(|(row, _, _)| *row)
+        .collect();
+    assert_eq!(rows, vec![cursor]);
+}
+
+#[test]
+fn no_step_mode_draws_no_active_change_marker() {
+    let (old, new) = change_lines(120, &[5, 50]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    app.next_hunk_scroll();
+    let rows = render_rows(&mut app, &mut terminal);
+    assert!(
+        !rows.iter().any(|row| row.contains('▶')),
+        "screen:\n{}",
+        rows.join("\n")
+    );
+}
+
+#[test]
+fn delete_word_backward_removes_the_previous_word() {
+    let (old, new) = change_lines(80, &[40]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    render_rows(&mut app, &mut terminal);
+    app.start_line_comment();
+    {
+        let editor = app.review_editor.as_mut().unwrap();
+        editor.text = "fix the bug".to_string();
+        editor.cursor = editor.text.len();
+    }
+    app.review_delete_word_backward();
+    assert_eq!(app.review_editor.as_ref().unwrap().text, "fix the ");
+    app.review_delete_word_backward();
+    assert_eq!(app.review_editor.as_ref().unwrap().text, "fix ");
+    app.review_delete_word_backward();
+    assert_eq!(app.review_editor.as_ref().unwrap().text, "");
+}
+
+#[test]
+fn clicking_a_file_name_opens_it_and_focuses_the_diff() {
+    let diff = MultiFileDiff::from_file_pairs(vec![
+        (
+            std::path::PathBuf::from("a.txt"),
+            "a\n".to_string(),
+            "aa\n".to_string(),
+        ),
+        (
+            std::path::PathBuf::from("b.txt"),
+            "b\n".to_string(),
+            "bb\n".to_string(),
+        ),
+    ]);
+    let mut app = App::new(diff, ViewMode::UnifiedPane, 0, false, None);
+    app.file_list_area = Some((0, 0, 20, 5));
+    app.file_list_rows = vec![Some(1)];
+
+    assert!(app.handle_file_list_click(1, 1, false));
+
+    assert_eq!(app.multi_diff.selected_index, 1);
+    assert!(!app.file_list_focused, "j/k should move in the opened file");
+}
+
+#[test]
+fn cursor_row_stands_out_on_a_changed_line() {
+    let (old, new) = change_lines(80, &[40, 41]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(line_number_at_cursor(&app, &rows), 40);
+    let cursor = app.review_line_add_row.unwrap();
+    let (x, _, _, _) = app.diff_view_area.unwrap();
+    let col = x + 12;
+    let buffer = terminal.backend().buffer();
+    let cursor_bg = buffer[(col, cursor)].bg;
+    let next_bg = buffer[(col, cursor + 1)].bg;
+    assert!(rows[cursor as usize + 1].contains("line 41 changed"));
+    assert_ne!(
+        cursor_bg, next_bg,
+        "the cursor row looks the same as the changed line below it"
+    );
+}
+
+#[test]
+fn half_page_scroll_moves_the_cursor_to_the_middle_row_so_j_does_not_jump() {
+    let (old, new) = change_lines(120, &[2]);
+    let (mut app, mut terminal, _guard) = line_cursor_app(old, new, 30);
+    let rows = render_rows(&mut app, &mut terminal);
+    // Near the start of the file the cursor sits above the middle row.
+    assert_eq!(line_number_at_cursor(&app, &rows), 2);
+    assert!(app.review_line_add_row.unwrap() < middle_row(&app));
+
+    app.scroll_half_page_down(24);
+    let rows = render_rows(&mut app, &mut terminal);
+    assert_eq!(app.review_line_add_row, Some(middle_row(&app)));
+    let after_scroll = line_number_at_cursor(&app, &rows);
+    let scroll_after_page = app.scroll_offset;
+
+    let rows = press(&mut app, &mut terminal, 1, 1);
+    assert_eq!(line_number_at_cursor(&app, &rows), after_scroll + 1);
+    assert_eq!(
+        app.scroll_offset,
+        scroll_after_page + 1,
+        "j scrolled by one row, not half a page"
+    );
+}
+
+fn three_file_review_app() -> App {
+    let diff = MultiFileDiff::from_file_pairs(vec![
+        (
+            std::path::PathBuf::from("a.txt"),
+            "a\n".to_string(),
+            "aa\n".to_string(),
+        ),
+        (
+            std::path::PathBuf::from("b.txt"),
+            "b\n".to_string(),
+            "bb\n".to_string(),
+        ),
+        (
+            std::path::PathBuf::from("c.txt"),
+            "c\n".to_string(),
+            "cc\n".to_string(),
+        ),
+    ]);
+    let mut app = App::new(diff, ViewMode::UnifiedPane, 0, false, None);
+    app.set_review_persist_enabled(false);
+    app.enable_review_mode();
+    app
+}
+
+#[test]
+fn review_file_and_next_marks_the_file_and_opens_the_next_one() {
+    let mut app = three_file_review_app();
+    assert_eq!(app.multi_diff.selected_index, 0);
+
+    app.review_file_and_next();
+
+    assert!(app.reviewed_files.contains_key("a.txt"));
+    assert_eq!(app.multi_diff.selected_index, 1);
+}
+
+#[test]
+fn review_file_and_next_keeps_an_already_reviewed_file_reviewed() {
+    let mut app = three_file_review_app();
+    app.toggle_current_file_reviewed();
+    assert!(app.reviewed_files.contains_key("a.txt"));
+
+    app.review_file_and_next();
+
+    assert!(
+        app.reviewed_files.contains_key("a.txt"),
+        "pressing r again does not unmark"
+    );
+    assert_eq!(app.multi_diff.selected_index, 1);
+}
+
+fn render_python(old: &str, new: &str, fold_imports: bool) -> String {
+    let _guard = DiffSettingsGuard::default();
+    let diff = MultiFileDiff::from_file_pair(
+        std::path::PathBuf::from("a.py"),
+        std::path::PathBuf::from("a.py"),
+        old.to_string(),
+        new.to_string(),
+    );
+    let mut app = App::new(diff, ViewMode::UnifiedPane, 100, false, None);
+    app.fold_imports = fold_imports;
+    app.stepping = false;
+    app.enter_no_step_mode();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 60)).unwrap();
+    render_rows(&mut app, &mut terminal).join("\n")
+}
+
+fn python_file(first_import: &str, body_change: &str) -> String {
+    let body: String = (1..=12).map(|i| format!("x{i} = {i}\n")).collect();
+    format!(
+        "{first_import}\nimport sys\nfrom typing import (\n    Any,\n    cast,\n)\n\n{body}{body_change}\n"
+    )
+}
+
+#[test]
+fn unchanged_import_block_folds_into_one_row() {
+    let old = python_file("import os", "y = 1");
+    let new = python_file("import os", "y = 2");
+    let screen = render_python(&old, &new, true);
+    assert!(
+        screen.contains("6 unchanged import lines"),
+        "screen:\n{screen}"
+    );
+    assert!(!screen.contains("import sys"), "screen:\n{screen}");
+    assert!(
+        screen.contains("~ y = "),
+        "the change stays visible:\n{screen}"
+    );
+}
+
+#[test]
+fn changed_import_stays_visible_and_the_rest_folds() {
+    let old = python_file("import os", "y = 1");
+    let new = python_file("import pathlib", "y = 1");
+    let screen = render_python(&old, &new, true);
+    assert!(screen.contains("~ import "), "screen:\n{screen}");
+    assert!(
+        screen.contains("5 unchanged import lines"),
+        "screen:\n{screen}"
+    );
+}
+
+#[test]
+fn import_folding_is_off_by_default() {
+    let old = python_file("import pathlib", "y = 1");
+    let new = python_file("import os", "y = 1");
+    let screen = render_python(&old, &new, false);
+    assert!(screen.contains("import sys"), "screen:\n{screen}");
+    assert!(!screen.contains("import lines"), "screen:\n{screen}");
+}
